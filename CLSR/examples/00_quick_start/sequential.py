@@ -63,7 +63,7 @@ flags.DEFINE_float('layer_l2', 1e-6, 'L2 regulation for layers.')
 flags.DEFINE_float('attn_loss_weight', 0.001, 'Loss weight for supervised attention.')
 flags.DEFINE_float('triplet_margin', 1.0, 'Margin value for triplet loss.')
 flags.DEFINE_float('discrepancy_loss_weight', 0.01, 'Loss weight for discrepancy between long and short term user embedding.')
-flags.DEFINE_float('contrastive_loss_weight', 0.1, 'Loss weight for contrastive of long and short intention.')
+flags.DEFINE_float('contrastive_loss_weight', 0.0, 'Loss weight for contrastive of long and short intention.')
 flags.DEFINE_float('learning_rate', 0.001, 'Learning rate.')
 flags.DEFINE_integer('show_step', 500, 'Step for showing metrics.')
 
