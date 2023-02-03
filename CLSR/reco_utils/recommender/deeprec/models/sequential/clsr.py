@@ -13,6 +13,7 @@ from reco_utils.recommender.deeprec.deeprec_utils import load_dict
 
 import os
 import numpy as np
+import pdb 
 
 __all__ = ["CLSRModel"]
 
@@ -258,17 +259,24 @@ class CLSRModel(SequentialBaseModel):
                         )
 
                     last_hidden_nn_layer = concat_all
-                    alpha_logit = self._fcn_net(
+                    
+                    # alpha 由标量改为向量
+                    alpha_logit = self._fcn_transform_net(
                         last_hidden_nn_layer, hparams.att_fcn_layer_sizes, scope="fcn_alpha"
-                    )
-                    self.alpha_output = tf.sigmoid(alpha_logit)
-                    user_embed = self.att_fea_long * self.alpha_output + self.att_fea_short * (1.0 - self.alpha_output)
-                    tf.summary.histogram("alpha", self.alpha_output)
-                    self.alpha_output_mean = self.alpha_output
-                    error_with_category = self.alpha_output_mean - self.iterator.attn_labels
-                    tf.summary.histogram("error_with_category", error_with_category)
-                    squared_error_with_category = tf.math.sqrt(tf.math.squared_difference(tf.reshape(self.alpha_output_mean, [-1]), tf.reshape(self.iterator.attn_labels, [-1])))
-                    tf.summary.histogram("squared_error_with_category", squared_error_with_category)
+                    )# 利用原始文件自带的函数_fcn_transform_net
+                     #<tf.Tensor 'sequential/clsr/alpha/fcn_alpha/nn_part/Relu_1:0' shape=(?, 40) dtype=float32>
+                    
+                    self.alpha_output = tf.sigmoid( alpha_logit )
+                    self.alpha_output = 1.0/(1.0+self.alpha_output)
+                    
+                    user_embed = self.att_fea_long * self.alpha_output + self.att_fea_short *  (1.0 -self.alpha_output )
+                    tf.summary.histogram("alpha ", self.alpha_output )
+                    #这部分不要了
+                    #self.alpha_output_mean = self.alpha_output
+                    #error_with_category = self.alpha_output_mean - self.iterator.attn_labels
+                    #tf.summary.histogram("error_with_category", error_with_category)
+                    #squared_error_with_category = tf.math.sqrt(tf.math.squared_difference(tf.reshape(self.alpha_output_mean, [-1]), tf.reshape(self.iterator.attn_labels, [-1])))
+                    #tf.summary.histogram("squared_error_with_category", squared_error_with_category)
                 else:
                     self.alpha_output = tf.constant([[hparams.manual_alpha_value]])
                     user_embed = self.att_fea_long * hparams.manual_alpha_value + self.att_fea_short * (1.0 - hparams.manual_alpha_value)
