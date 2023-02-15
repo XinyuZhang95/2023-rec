@@ -20,12 +20,12 @@ import _pickle as cPickle
 from reco_utils.dataset.download_utils import maybe_download, download_path
 
 from reco_utils.recommender.deeprec.deeprec_utils import load_dict
-
+import pdb
 logger = logging.getLogger()
 
 
 def data_preprocessing(
-    reviews_file,
+    reviews_file,#原始文件吗？
     meta_file,
     train_file,
     valid_file,
@@ -33,9 +33,9 @@ def data_preprocessing(
     user_vocab,
     item_vocab,
     cate_vocab,
-    sample_rate=0.01,
+    sample_rate=0.01,#1
     valid_num_ngs=4,
-    test_num_ngs=9,
+    test_num_ngs=9,#99
     dataset='taobao',
     is_history_expanding=True,
 ):
@@ -46,32 +46,35 @@ def data_preprocessing(
         meta_file (str): Meta dataset downloaded from former operations.
     """
     if dataset == 'taobao':
-        reviews_output, meta_output = taobao_main(reviews_file)
+        reviews_output, meta_output = taobao_main(reviews_file)#reviews_output是过滤处理后的原始文件，meta_output是对应的物品<->类别文件
     elif dataset == 'kuaishou':
         reviews_output, meta_output = kuaishou_main(reviews_file)
 
-    instance_output = _create_instance(reviews_output, meta_output)
-    _create_item2cate(instance_output)
+    instance_output = _create_instance(reviews_output, meta_output)#结合上述两个文件的真真正正的文件
+    _create_item2cate(instance_output)#得到字典{物品：类别}
+    #instance_output_1.0 不做任何变化
     sampled_instance_file = _get_sampled_data(instance_output, sample_rate=sample_rate)
 
     if dataset == 'kuaishou':
         preprocessed_output = _data_processing_ks(sampled_instance_file)
-    elif dataset == 'taobao':
+    elif dataset == 'taobao':#将数据从时间上分为训练集，测试集以及验证集
         preprocessed_output = _data_processing_taobao(sampled_instance_file)
 
-    if is_history_expanding:
+    if is_history_expanding:#
         if dataset == 'kuaishou':
             _data_generating_ks(preprocessed_output, train_file, valid_file, test_file)
-        elif dataset == 'taobao':
+        elif dataset == 'taobao':#到这里还未进行负采样
             _data_generating_global(preprocessed_output, train_file, valid_file, test_file)
     else:
         _data_generating_no_history_expanding(
             preprocessed_output, train_file, valid_file, test_file
         )
+    #建立原始id与连续id的映射关系表 train_file 有最全面完整的user，item信息就算不完整，也要按照train这个来
     _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab)
-    _negative_sampling_offline(
-        sampled_instance_file, valid_file, test_file, valid_num_ngs, test_num_ngs
-    )
+    #就是按照流行度采样
+    # _negative_sampling_offline(
+    #     sampled_instance_file, valid_file, test_file, valid_num_ngs, test_num_ngs
+    # 采样标准改为当天物品流行度的负采样
 
 
 def _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab):
@@ -83,8 +86,8 @@ def _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab):
     cat_dict = {}
 
     logger.info("vocab generating...")
-    for line in f_train:
-        arr = line.strip("\n").split("\t")
+    for line in f_train:#计数
+        arr = line.strip("\n").split("\t")#['1', '1001088', '4453400', '3607361', '1511617081', '2438165', '2735466', '1511617060']
         uid = arr[1]
         mid = arr[2]
         cat = arr[3]
@@ -93,7 +96,7 @@ def _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab):
 
         if uid not in user_dict:
             user_dict[uid] = 0
-        user_dict[uid] += 1
+        user_dict[uid] += 1 
         if mid not in item_dict:
             item_dict[mid] = 0
         item_dict[mid] += 1
@@ -101,7 +104,7 @@ def _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab):
             cat_dict[cat] = 0
         cat_dict[cat] += 1
         if len(mid_list) == 0:
-            continue
+            continue#不会走到这一步的吧？
         for m in mid_list.split(","):
             if m not in item_dict:
                 item_dict[m] = 0
@@ -110,14 +113,15 @@ def _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab):
             if c not in cat_dict:
                 cat_dict[c] = 0
             cat_dict[c] += 1
-
+    #根据“流行度”排序，但我不认为这是真正的流行度，主要是便于编码？
+    #len(user_dict) = 36842 len(item_dict) = 65204  len(cat_dict)=2181
     sorted_user_dict = sorted(user_dict.items(), key=lambda x: x[1], reverse=True)
     sorted_item_dict = sorted(item_dict.items(), key=lambda x: x[1], reverse=True)
     sorted_cat_dict = sorted(cat_dict.items(), key=lambda x: x[1], reverse=True)
 
-    uid_voc = {}
+    uid_voc = {}#制作真正的vocabulary
     if dataset in ['kuaishou', 'taobao']: # global time split, there are some unseen users
-        uid_voc["default_uid"] = 0
+        uid_voc["default_uid"] = 0#0表示特别标识
         index = 1
     else:
         index = 0
@@ -144,30 +148,38 @@ def _create_vocab(dataset, train_file, user_vocab, item_vocab, cate_vocab):
     cPickle.dump(cat_voc, open(cate_vocab, "wb"))
 
 
-def _negative_sampling_offline(
-    instance_input_file, valid_file, test_file, valid_neg_nums=4, test_neg_nums=49
+def negative_sampling_offline(
+     instance_input_file, valid_file, test_file, valid_neg_nums=4, test_neg_nums=49
 ):
+    pdb.set_trace()
+   
+    
 
-    columns = ["label", "user_id", "item_id", "timestamp", "cate_id"]
-    ns_df = pd.read_csv(instance_input_file, sep="\t", names=columns)
-    items_with_popular = list(ns_df["item_id"])
+    #columns = ["label", "user_id", "item_id", "timestamp", "cate_id"]
+    #[1517074 rows x 5 columns]
+    ns_df_all = pd.read_csv(instance_input_file, sep="\t" )
+    item2cate = ns_df_all.set_index("iid")["category"].to_dict()#物品：类别{1558817: 2806049, 2473220: 2247787, 2206711: 2293367
+    ns_df_v = ns_df_all[ns_df_all['day']==2]
+    ns_df_t = ns_df_all[ns_df_all['day']==3]
+    items_with_popular_v = list(ns_df_v["iid"])#要计算真正的流行度了吗？
+    items_with_popular_t = list(ns_df_t["iid"])
 
-    global item2cate
+ 
 
     # valid negative sampling
     logger.info("start valid negative sampling")
     with open(valid_file, "r") as f:
-        valid_lines = f.readlines()
-    write_valid = open(valid_file, "w")
+        valid_lines = f.readlines()#全部读入
+    write_valid = open(valid_file, "w")#直接写在原文件里，源文件清零
     for line in valid_lines:
         write_valid.write(line)
         words = line.strip().split("\t")
-        positive_item = words[2]
+        positive_item = words[2]#target
         count = 0
-        neg_items = set()
+        neg_items = set()#负样本设置为集合
         while count < valid_neg_nums:
-            neg_item = random.choice(items_with_popular)
-            if neg_item == positive_item or neg_item in neg_items:
+            neg_item = random.choice( items_with_popular_v)#就是流行度越高，越容易采样
+            if neg_item == positive_item or neg_item in neg_items:#如果负例=正例或已经采样过
                 continue
             count += 1
             neg_items.add(neg_item)
@@ -188,7 +200,7 @@ def _negative_sampling_offline(
         count = 0
         neg_items = set()
         while count < test_neg_nums:
-            neg_item = random.choice(items_with_popular)
+            neg_item = random.choice(items_with_popular_t)
             if neg_item == positive_item or neg_item in neg_items:
                 continue
             count += 1
@@ -362,6 +374,7 @@ def _data_generating_global(input_file, train_file, valid_file, test_file, min_s
     1, 12, 123, 1234, 12345
     Add sampling with 1/10 train instances for long-range sequence dataset(kuaishou)
     """
+    #到这里还未进行负采样
     f_input = open(input_file, "r")
     f_train = open(train_file, "w")
     f_valid = open(valid_file, "w")
@@ -369,9 +382,9 @@ def _data_generating_global(input_file, train_file, valid_file, test_file, min_s
     logger.info("data generating...")
     last_user_id = None
     for line in f_input:
-        line_split = line.strip().split("\t")
+        line_split = line.strip().split("\t")#'train\t1\t1001088\t2438165\t1511617060\t2735466\n'->['train', '1', '1001088', '2438165', '1511617060', '2735466']
         tfile = line_split[0]
-        label = int(line_split[1])
+        label = int(line_split[1])#应该一直都是1吧
         user_id = line_split[2]
         movie_id = line_split[3]
         date_time = line_split[4]
@@ -380,7 +393,7 @@ def _data_generating_global(input_file, train_file, valid_file, test_file, min_s
         if tfile == "train":
             fo = f_train
             sample_probability = 0
-        elif tfile == "valid":
+        elif tfile == "valid":#验证集和测试集不全用上，只用一部分，尽可能选择更长的序列
             fo = f_valid
             #  sample_probability = 0 # add
             sample_probability = round(np.random.uniform(0, 1), 1) # add 
@@ -405,24 +418,24 @@ def _data_generating_global(input_file, train_file, valid_file, test_file, min_s
                 for dt_time in dt_list:
                     dt_str += dt_time + ","
                 if len(cat_str) > 0:
-                    cat_str = cat_str[:-1]
+                    cat_str = cat_str[:-1]#为了去除‘，’
                 if len(mid_str) > 0:
                     mid_str = mid_str[:-1]
                 if len(dt_str) > 0:
                     dt_str = dt_str[:-1]
                 if history_clk_num >= min_sequence:
                     fo.write(
-                        line_split[1]
+                        line_split[1] #label
                         + "\t"
                         + user_id
                         + "\t"
-                        + movie_id
+                        + movie_id#target
                         + "\t"
                         + category
                         + "\t"
                         + date_time
                         + "\t"
-                        + mid_str
+                        + mid_str#历史序列
                         + "\t"
                         + cat_str
                         + "\t"
@@ -525,19 +538,19 @@ def _data_generating_no_history_expanding(
 
 def _create_item2cate(instance_file):
     logger.info("creating item2cate dict")
-    global item2cate
+    global item2cate#全局变量
     instance_df = pd.read_csv(
         instance_file,
         sep="\t",
         names=["label", "user_id", "item_id", "timestamp", "cate_id"],
-    )
-    item2cate = instance_df.set_index("item_id")["cate_id"].to_dict()
+    )#[1517074 rows x 5 columns]
+    item2cate = instance_df.set_index("item_id")["cate_id"].to_dict()#物品：类别{1558817: 2806049, 2473220: 2247787, 2206711: 2293367
 
 
 def _get_sampled_data(instance_file, sample_rate):
     logger.info("getting sampled data...")
     global item2cate
-    output_file = instance_file + "_" + str(sample_rate)
+    output_file = instance_file + "_" + str(sample_rate)#instance_output_1.0'
     columns = ["label", "user_id", "item_id", "timestamp", "cate_id"]
     ns_df = pd.read_csv(instance_file, sep="\t", names=columns)
     if sample_rate < 1:
@@ -551,7 +564,7 @@ def _get_sampled_data(instance_file, sample_rate):
                 count += 1
         ns_df_sample = ns_df[ns_df["item_id"].isin(items_sample)]
     else:
-        ns_df_sample = ns_df
+        ns_df_sample = ns_df#不做任何变化
     ns_df_sample.to_csv(output_file, sep="\t", index=None, header=None)
     return output_file
 
@@ -590,39 +603,43 @@ def _reviews_preprocessing(reviews_readfile):
 
 
 def _create_instance(reviews_file, meta_file):
-    logger.info("start create instances...")
+    logger.info("start create instances...")#产生训练entry
     dirs, _ = os.path.split(reviews_file)
-    output_file = os.path.join(dirs, "instance_output")
+    output_file = os.path.join(dirs, "instance_output")#是排好序，搭配好物品和物品类别的进一步的原始训练数据
 
-    f_reviews = open(reviews_file, "r")
+    f_reviews = open(reviews_file, "r")#只是返回一个句柄 1517074
     user_dict = {}
     item_list = []
+    
     for line in f_reviews:
-        line = line.strip()
-        reviews_things = line.split("\t")
+        line = line.strip()#'1001088\t2268318\t1511658939\n' -> '1001088\t2268318\t1511658939'
+        reviews_things = line.split("\t")#'1001088\t2268318\t1511658939' -> ['1001088', '2268318', '1511658939']
         if reviews_things[0] not in user_dict:
-            user_dict[reviews_things[0]] = []
-        user_dict[reviews_things[0]].append((line, float(reviews_things[-1])))
-        item_list.append(reviews_things[1])
-
-    f_meta = open(meta_file, "r")
+            user_dict[reviews_things[0]] = []#{'1001088': []}
+            
+        user_dict[reviews_things[0]].append((line, float(reviews_things[-1])))#{'1001088': [('1001088\t2268318\t1511658939', 1511658939.0)]}
+        item_list.append(reviews_things[1])#重复的物品也会被append['2268318']
+    #len(item_list) = 1517074
+    #len( user_dict) = 37112
+    f_meta = open(meta_file, "r")#65324
     meta_dict = {}
     for line in f_meta:
-        line = line.strip()
-        meta_things = line.split("\t")
+        line = line.strip()#'2268318\t2520377\n'->'2268318\t2520377'
+        meta_things = line.split("\t")#'2268318\t2520377' ->['2268318', '2520377']
         if meta_things[0] not in meta_dict:
             meta_dict[meta_things[0]] = meta_things[1]
-
+    #len( meta_dict) = 65324
     f_output = open(output_file, "w")
-    for user_behavior in user_dict:
+    for user_behavior in user_dict:# user_behavior 是key
+        #sorted() 函数不会改变所传入的序列，而是返回一个新的、排序好的列表
         sorted_user_behavior = sorted(user_dict[user_behavior], key=lambda x: x[1])
-        for line, _ in sorted_user_behavior:
-            user_things = line.split("\t")
-            asin = user_things[1]
+        for line, _ in sorted_user_behavior:# line = '1001088\t2438165\t1511617060'，_ = 1511617060.0
+            user_things = line.split("\t")#'1001088\t2438165\t1511617060' -> ['1001088', '2438165', '1511617060']
+            asin = user_things[1]#2438165'
             if asin in meta_dict:
-                f_output.write("1" + "\t" + line + "\t" + meta_dict[asin] + "\n")
-            else:
-                f_output.write("1" + "\t" + line + "\t" + "default_cat" + "\n")
+                f_output.write("1" + "\t" + line + "\t" + meta_dict[asin] + "\n")#'1\t1001088\t2438165\t1511617060\t2735466\n'
+            else:#理论上走不到这一行
+                f_output.write("1" + "\t" + line + "\t" + "default_cat" + "\n")#'1\t1001088\t2438165\t1511617060\tdefault_cat\n'
 
     f_reviews.close()
     f_meta.close()
@@ -714,15 +731,18 @@ def _data_processing_taobao(input_file):
     test_interval = 24*60*60
     user_touch_time = []
     for line in f_input:
-        line = line.strip()
-        time = int(line.split("\t")[3]) 
+        line = line.strip()#'1\t1001088\t2438165\t1511617060\t2735466\n'->'1\t1001088\t2438165\t1511617060\t2735466' 
+        time = int(line.split("\t")[3]) #1511617060
         user_touch_time.append(time)
+    #len(user_touch_time) = 1517074
     print("get user touch time completed") #
     user_touch_time_sorted = sorted(user_touch_time)
+    #q确定验证机和测试集时间
+    #user_touch_time_sorted[-1] = 1512316790
     test_split_time = user_touch_time_sorted[-1] - test_interval
     valid_split_time = user_touch_time_sorted[-1] - 2*test_interval
 
-    f_input.seek(0)
+    f_input.seek(0)#用于将文件指针移动至指定位置
     for line in f_input:
         line = line.strip()
         time = int(line.split("\t")[3]) # add
@@ -934,47 +954,59 @@ def transform_recommenders(review, business, dirs):
 
 
 def filter_items_with_multiple_cids(record):
-
+    #为了对item进行计数 record[['iid', 'category']].drop_duplicates()后 4070120
+    #有些item会不止一个类别吗？.groupby以后 4068790
     item_cate = record[['iid', 'category']].drop_duplicates().groupby('iid').count().reset_index().rename(columns={'category': 'count'})
+    #仅仅保留类别数为1的物品 4067469
     items_with_single_cid = item_cate[item_cate['count'] == 1]['iid']
-
+    #record 待拼接的左侧数据框
+    #items_with_single_cid 待拼接的右侧数据框
+    #左右两个数据框的连接方式。可选‘left’、‘right’、‘outer’、‘inner’，默认为inner。
+    #on：左右两个待拼接数据框有共同列名
+    #71057196 -> 71013979 相差43217
     record = pd.merge(record, items_with_single_cid, on='iid')
 
     return record
 
 
 def downsample(record, col, frac):
-
+    #DataFrame.sample方法主要是用来对DataFrame进行简单随机抽样的。注意，这里说的是简单随机抽样 
+    #drop_duplicate后 70960498->984101
+    #对用户进行采样，而非对entry进行采样，为什么要对用户进行采样？数据太多了吗？
+    #采样后用户数目984101 -> 49205
     sample_col = record[col].drop_duplicates().sample(frac=frac)
-
+    #70960498 ->3564223
     record = record.merge(sample_col, on=col).reset_index(drop=True)
 
     return record
 
 
 def taobao_main(reviews_file):
-
-    reviews = pd.read_csv(reviews_file, header=None, names=['uid', 'iid', 'category', 'behavior', 'ts'])
-    reviews = reviews[reviews['behavior'] == 'pv']
-    reviews = reviews.drop_duplicates(subset=['uid', 'iid'])
-    reviews = filter_items_with_multiple_cids(reviews)
-    start_ts = int(datetime.timestamp(datetime(2017, 11, 25, 0, 0, 0)))
+    #数据集处理的核心
+    #从原始文件开始
+    reviews = pd.read_csv(reviews_file, header=None, names=['uid', 'iid', 'category', 'behavior', 'ts'])#100150806
+    reviews = reviews[reviews['behavior'] == 'pv']#只是过滤出点击的，喜欢/购买这些都不算，可能其前提就是点击吧 89716264 但是索引未重整
+    #drop_duplicates函数是一种常见的数据处理函数,它能够有效地清除互联网上的重复信息,以实现有效的信息筛选功能。它的特别之处在于,可以从同一表中的多个列中清除重复信息,而且它使用损失最小的方式进行结果取舍,且不会影响原有数据样式。
+    #因此,此函数可以在处理互联网上非常庞大、拥有大量重复信息的查询结构时,大大减少数据结果中的冗余,以获取高质量的查询结果。
+    reviews = reviews.drop_duplicates(subset=['uid', 'iid'])#71057196
+    reviews = filter_items_with_multiple_cids(reviews)#过滤多个类标签的物品 71057196 -> 71013979
+    start_ts = int(datetime.timestamp(datetime(2017, 11, 25, 0, 0, 0)))#转换为unix时间
     end_ts = int(datetime.timestamp(datetime(2017, 12, 3, 23, 59, 59)))
-    reviews = reviews[reviews['ts'] >= start_ts]
-    reviews = reviews[reviews['ts'] <= end_ts]
-    reviews = downsample(reviews, 'uid', 0.05)
+    reviews = reviews[reviews['ts'] >= start_ts]#71013979 ->70962318
+    reviews = reviews[reviews['ts'] <= end_ts]#70962318 -> 70960498 
+    reviews = downsample(reviews, 'uid', 0.05)#对用户进行降采样的结果和对整个数据集降采样结果一致70960498  -> 3564223
 
-    k_core = 10
-    reviews = filter_k_core(reviews, k_core, 'iid', 'uid')
-    reviews = filter_k_core(reviews, k_core, 'uid', 'iid')
+    k_core = 10#交互小于10的给剔除
+    reviews = filter_k_core(reviews, k_core, 'iid', 'uid')#3564223 -> 1577496
+    reviews = filter_k_core(reviews, k_core, 'uid', 'iid')#1577496 ->1517074
 
-    business = reviews[['iid', 'category']].drop_duplicates()
-    reviews = reviews[['uid', 'iid', 'ts']]
+    business = reviews[['iid', 'category']].drop_duplicates()#65323 uniq的物品<->类别文件，原始id未处理
+    reviews = reviews[['uid', 'iid', 'ts']]#不包含cate信息
 
     dirs, _ = os.path.split(reviews_file)
-
-    reviews_output = os.path.join(dirs, 'taobao_review_recommenders.csv')
-    meta_output = os.path.join(dirs, 'taobao_business_recommenders.csv')
+    #这两个文件是真正可用的原始文件
+    reviews_output = os.path.join(dirs, 'taobao_review_recommenders.csv')#这个才算是做过各种过滤后的原始数据id
+    meta_output = os.path.join(dirs, 'taobao_business_recommenders.csv')#对应上述文件的物品<->类别文件
 
     reviews.to_csv(reviews_output, sep='\t', header=False, index=False)
     business.to_csv(meta_output, sep='\t', header=False, index=False)

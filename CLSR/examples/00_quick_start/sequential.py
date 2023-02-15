@@ -17,7 +17,7 @@ from reco_utils.common.constants import SEED
 from reco_utils.recommender.deeprec.deeprec_utils import (
     prepare_hparams
 )
-from reco_utils.dataset.sequential_reviews import data_preprocessing
+from reco_utils.dataset.sequential_reviews import data_preprocessing, negative_sampling_offline
 from reco_utils.recommender.deeprec.models.sequential.sli_rec import SLI_RECModel
 from reco_utils.recommender.deeprec.models.sequential.clsr import CLSRModel
 from reco_utils.recommender.deeprec.models.sequential.asvd import A2SVDModel
@@ -32,6 +32,7 @@ from reco_utils.recommender.deeprec.io.sequential_iterator import (
     SequentialIterator,
     SASequentialIterator
 )
+import pdb
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('dataset', 'taobao', 'Dataset name.')
@@ -63,7 +64,7 @@ flags.DEFINE_float('layer_l2', 1e-6, 'L2 regulation for layers.')
 flags.DEFINE_float('attn_loss_weight', 0.001, 'Loss weight for supervised attention.')
 flags.DEFINE_float('triplet_margin', 1.0, 'Margin value for triplet loss.')
 flags.DEFINE_float('discrepancy_loss_weight', 0.01, 'Loss weight for discrepancy between long and short term user embedding.')
-flags.DEFINE_float('contrastive_loss_weight', 0.0, 'Loss weight for contrastive of long and short intention.')
+flags.DEFINE_float('contrastive_loss_weight', 0.1, 'Loss weight for contrastive of long and short intention.')
 flags.DEFINE_float('learning_rate', 0.001, 'Learning rate.')
 flags.DEFINE_integer('show_step', 500, 'Step for showing metrics.')
 
@@ -341,7 +342,12 @@ def main(argv):
     input_files = [reviews_file, meta_file, train_file, valid_file, test_file, user_vocab, item_vocab, cate_vocab]
 
     if not os.path.exists(train_file):
+        pdb.set_trace()#这里把时间划分给摘出来了，所以有些东西是不连贯的，暂且先用这个数据集吧
         data_preprocessing(*input_files, sample_rate=sample_rate, valid_num_ngs=valid_num_ngs, test_num_ngs=test_num_ngs, dataset=flags_obj.dataset)
+        intance_output_time=os.path.join(data_path, r'instance_output_time')
+        pdb.set_trace()#验证集和测试集的负采样设置为在当天的样本中选取
+        negative_sampling_offline(instance_input_file=intance_output_time, valid_file= valid_file, test_file=test_file, valid_neg_nums=valid_num_ngs, test_neg_nums=test_num_ngs)
+
 
     save_path = os.path.join(flags_obj.save_path, flags_obj.model, flags_obj.name)
     model_path = os.path.join(save_path, "model/")
